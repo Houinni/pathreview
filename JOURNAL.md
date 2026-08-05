@@ -58,7 +58,7 @@ None blocking. Two things I want a reviewer's eye on, both flagged in the PR des
 
 ### Check-in 2 (end of week)
 
-**PR link:** <!-- FILL IN: link to the submitted (not draft) PR -->
+**PR link:** _to be filled in on submission — PR not yet opened at time of writing_
 
 **Branch:** `fix/152-faithfulness-checker-can-never-mark-short-claims-as-supported`
 
@@ -86,4 +86,4 @@ Three notes on method, so the numbers can be reproduced:
 - **`make check` never reaches `make format`.** `check` depends on `lint` first, and make halts on the first failing prerequisite, so `black .` does not run. This matters because `format` rewrites in place rather than checking: it would reformat 52 files repo-wide, burying a ~90-line fix in thousands of lines of unrelated reflow. Both files I touched were already failing `black --check` at baseline and still are — not a regression.
 - The one remaining ruff error inside the files I touched is a pre-existing `F841` in the maintainer's `test_common_words_filtered_in_overlap`, which calls `_is_supported` and never asserts on the result. It is present at `84dd3b8` and is the same category of test bug as the `xfail`ed one — left alone deliberately rather than widening this PR.
 
-**Draft PR feedback received from:** <!-- FILL IN: name or Slack handle, or "none" -->
+**Draft PR feedback received from:** none
