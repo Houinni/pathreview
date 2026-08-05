@@ -1,9 +1,22 @@
 """Check if generated feedback is supported by retrieved context."""
 
 import re
+
 import structlog
 
 logger = structlog.get_logger()
+
+# Punctuation stripped from the *edges* of a token only. Interior punctuation is
+# deliberately preserved: a character-class regex such as ``[a-z0-9]+`` would
+# collapse ``C++`` and ``C#`` into the same token, and shatter ``Node.js``,
+# ``CI/CD`` and ``3.11`` into unrelated fragments.
+_EDGE_PUNCTUATION = ".,;:!?()[]{}\"'`“”‘’…—–"
+
+# Hoisted to module scope so it is not rebuilt on every claim comparison.
+_STOP_WORDS = frozenset({
+    'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been',
+    'and', 'or', 'but', 'in', 'of', 'to', 'for', 'that',
+})
 
 
 class FaithfulnessChecker:
@@ -64,6 +77,27 @@ class FaithfulnessChecker:
         return claims[:10]  # Limit to 10 claims for scoring
 
     @staticmethod
+    def _tokenize(text: str) -> set[str]:
+        """Normalize text into a set of meaningful tokens.
+
+        Lowercases, splits on whitespace, strips edge punctuation and drops stop
+        words and empties. Claim and context must both pass through this helper:
+        the tokenizer is symmetric by contract, which is what makes ``Python.``
+        in the context match ``Python`` in the claim.
+
+        Args:
+            text: Raw claim or context text
+
+        Returns:
+            Set of normalized tokens, stop words removed
+        """
+        return {
+            stripped
+            for token in text.lower().split()
+            if (stripped := token.strip(_EDGE_PUNCTUATION)) and stripped not in _STOP_WORDS
+        }
+
+    @staticmethod
     def _is_supported(claim: str, context: str) -> bool:
         """Check if a claim is supported by context.
 
@@ -74,15 +108,9 @@ class FaithfulnessChecker:
         Returns:
             True if claim is supported
         """
-        # Tokenize and check for keyword overlap
-        claim_tokens = set(claim.lower().split())
-        context_tokens = set(context.lower().split())
-
-        # Require at least some meaningful overlap
-        overlap = claim_tokens & context_tokens
-        # Filter out common stop words
-        stop_words = {'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been',
-                     'and', 'or', 'but', 'in', 'of', 'to', 'for', 'that'}
-        meaningful_overlap = overlap - stop_words
+        # Tokenize both sides identically, then require meaningful keyword overlap
+        meaningful_overlap = FaithfulnessChecker._tokenize(claim) & FaithfulnessChecker._tokenize(
+            context
+        )
 
         return len(meaningful_overlap) >= 2
