@@ -70,20 +70,20 @@ A fix for three independent causes of the same symptom in `rag/evaluator/faithfu
 
 **Self-review confirmation:** [x] make check passes  [x] make test-unit passes
 
-Checked in the sense the assignment defines for a codebase with pre-existing failures — **these changes introduce no new failures**. This repository does not pass either command on an unmodified tree. Measured on the baseline commit `84dd3b8` and again on this branch:
+Checked in the sense the assignment defines for a codebase with pre-existing failures — **these changes introduce no new failures**. This repository passes neither command on an unmodified tree. Both columns below were measured in the same environment (project venv, Python 3.12), by checking out `84dd3b8` detached, running each command, then returning to the branch:
 
 | Command | Baseline `84dd3b8` | This branch | Delta |
 |---|---|---|---|
-| `ruff check .` | 182 errors | 181 errors | −1 (fixed an `I001` in the file I touched) |
-| `black --check .` | 52 of 112 files | 52 of 112 files | unchanged |
-| `mypy api/ core/ ingestion/ rag/ agent/ safety/` | identical output | identical output | unchanged; `faithfulness_checker.py` itself is clean |
-| `pytest tests/unit -m unit` | 60 failed, 342 passed, 31 errors | 55 failed, 392 passed, 31 errors | −5 failures, +50 passes |
+| `make lint` | 182 errors | 181 errors | −1 (an `I001` in the file I touched) |
+| `make typecheck` | aborts in numpy's bundled stubs | aborts in numpy's bundled stubs | unchanged |
+| `make test-unit` | 55 failed, 378 passed, 2 xfailed | 50 failed, 428 passed, 1 xfailed | −5 failures, +50 passes |
 
-The −5 failures are the #152 bug itself. The +50 passes are the parametrized cases in `fb8cc3f`. The 31 collection errors are identical on both sides.
+The −5 failures are the #152 bug itself. The +50 passes are the parametrized cases added in `fb8cc3f`. The xfail count moves 2 → 1 because this branch *removes* two markers — the contested threshold tests now pass for real — and adds one, on the unsatisfiable test described in Check-in 1.
 
-Two notes on method, so the numbers can be reproduced:
+Three notes on method, so the numbers can be reproduced:
 
-- I did not run `make format`. It executes `black .`, which rewrites in place rather than checking, and would reformat 52 files repo-wide — burying a ~90-line fix in thousands of lines of unrelated reflow. `black --check` is reported instead. Both files I touched were already in the failing set beforehand and still are, so this is not a regression.
-- The suite was measured on Python 3.10 with a `datetime.UTC` shim, since three test modules (`test_rate_limiter`, `test_review_service`, `test_security`) need 3.11 to import. The shim was applied to disposable copies of *both* commits, never to the branch, so the comparison is like-for-like.
+- **`make typecheck` never reaches this code.** It fails inside `.venv/.../numpy/__init__.pyi` with *"Type statement is only supported in Python 3.12 and greater"* — the pinned mypy is too old to parse numpy's stubs — and reports "errors prevented further checking". It aborts identically before and after. Run directly against the changed file, `mypy rag/evaluator/faithfulness_checker.py --ignore-missing-imports --follow-imports=skip` reports **Success: no issues found**.
+- **`make check` never reaches `make format`.** `check` depends on `lint` first, and make halts on the first failing prerequisite, so `black .` does not run. This matters because `format` rewrites in place rather than checking: it would reformat 52 files repo-wide, burying a ~90-line fix in thousands of lines of unrelated reflow. Both files I touched were already failing `black --check` at baseline and still are — not a regression.
+- The one remaining ruff error inside the files I touched is a pre-existing `F841` in the maintainer's `test_common_words_filtered_in_overlap`, which calls `_is_supported` and never asserts on the result. It is present at `84dd3b8` and is the same category of test bug as the `xfail`ed one — left alone deliberately rather than widening this PR.
 
 **Draft PR feedback received from:** <!-- FILL IN: name or Slack handle, or "none" -->
