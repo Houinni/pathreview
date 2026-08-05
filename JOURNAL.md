@@ -30,3 +30,20 @@ I called `FaithfulnessChecker.check()` directly with short claims against contex
 The threshold change is a design decision I don't want to make unilaterally. Measured against 10 labelled cases, fixing tokenization alone passes 8/10 — and the only two failures are cases I invented, asserting that one keyword match should ground a two-word claim (`"Knows Python"` vs `"proficient in Python"`). No maintainer test requires this, three different ratios fit all 10 cases equally well (overfitting to a set I wrote myself), and loosening the threshold pushes a safety metric toward false positives. I've marked those two tests `xfail` and plan to ask on the issue before touching `>= 2`.
 
 Also noted but deliberately out of scope, pending confirmation they should be separate issues: `claims[:10]` truncates scoring to the first 10 sentences, so appending 100 fabricated sentences to supported feedback still scores 1.00; `{"text": None}` raises a `TypeError`; and token overlap can't detect negation, so `"has Kubernetes experience"` scores 1.00 against `"has no Kubernetes experience"` both before and after my fix. The PR should not claim to reduce false positives.
+
+## Week 9 — Implementation
+
+**Commits:** `919c92a` tokenizer · `324f815` claim filter · `ec6f84d` threshold · `5fec6dc` xfail · `e674007` logging
+
+**What I built:**
+Four commits, one per root cause plus one for observability. A shared `_tokenize` helper applied identically to claim and context, stripping *edge* punctuation only so `C++`, `C#`, `Node.js`, `CI/CD` and `3.11` survive intact while `Python.` normalizes to `python`. The claim filter moved from `len(s) > 10` characters to `>= 2` words. The overlap threshold moved from an absolute `>= 2` to a proportional `0.3` of claim tokens. Extraction now logs `extracted_count` / `dropped_count` / `unscored_count` before truncation, so the `claims[:10]` slice is no longer invisible.
+
+**Where I departed from the plan, and why:**
+The plan deferred the threshold change on the grounds that no maintainer test demanded it. Working through the failures, that premise was wrong. `test_multiple_claims_varying_support` expects two of three claims supported, and both supported claims (`"Python expert"`, `"Skilled with Docker"`) overlap the context on exactly one token — under `>= 2` it stays red however good the tokenizer is. My 10-case table had mislabelled it. The real choice was therefore not "adopt my opinion or wait for the maintainer" but "satisfy a maintainer test or ship a red one". Re-measured, the window of ratios satisfying every test is `(0.17, 0.33]`; `0.3` sits inside it with margin at both ends, so I adopted it and dropped the two `xfail` markers that were waiting on this exact decision. The ratio is a named constant with the window recorded in a comment, because a narrow window derived from a small suite is still a small-sample number.
+
+**A test that cannot pass:**
+The plan also predicted `test_partial_support_returns_middle_score` would go green. It cannot. Its fixture is a single sentence, so `check()` scores one claim and returns exactly 0.0 or 1.0 — never a value strictly inside the asserted `(0.2, 0.8)`. Partial credit wouldn't save it either; the claim overlaps on 1 of 6 meaningful tokens, so a ratio-valued score is 0.17. That's a test bug independent of #152, so I marked it `xfail` with the arithmetic in the reason rather than rewriting a maintainer's assertion to make my own PR look green.
+
+**Verification:** `test_faithfulness_checker.py` and `test_faithfulness_short_claims.py` are green apart from `test_none_context_chunk_text`, the `{"text": None}` `TypeError` the plan scoped out. Every edge case in the plan's regression table still holds — empty inputs, missing `text` key, punctuation-only and stop-word-only claims, determinism. `test_relevance_scorer.py::test_query_with_partial_overlap` also fails, but it fails identically at `84dd3b8` and lives in a file I never touched.
+
+**Still open:** the three negation cases still score 1.00 (Risk 2) — the PR must not claim to reduce false positives. `claims[:10]`, `{"text": None}` and the threshold confirmation all want follow-up issues.
