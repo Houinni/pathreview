@@ -31,62 +31,59 @@ The threshold change is a design decision I don't want to make unilaterally. Mea
 
 Also noted but deliberately out of scope, pending confirmation they should be separate issues: `claims[:10]` truncates scoring to the first 10 sentences, so appending 100 fabricated sentences to supported feedback still scores 1.00; `{"text": None}` raises a `TypeError`; and token overlap can't detect negation, so `"has Kubernetes experience"` scores 1.00 against `"has no Kubernetes experience"` both before and after my fix. The PR should not claim to reduce false positives.
 
-## Week 9 — Check-in 1 (Wednesday)
+## Week 9 — Solution building & PR submission
 
-**Commits:** `777b5b2` tokenizer · `3328f5f` claim filter · `068ae6e` threshold · `8eaf645` xfail · `f50f903` logging · `d798e96` plan corrections · `fb8cc3f` tests
+### Check-in 1 (mid-week)
 
-**Status:** implementation complete, tests written, self-review done. Remaining: open the draft PR, get peer review, submit.
+**Current progress:**
+All of PLAN.md Tier 1 is implemented, one commit per sub-task, plus one sub-task the plan did not originally contain.
 
-**What I built:**
-Four commits, one per root cause plus one for observability. A shared `_tokenize` helper applied identically to claim and context, stripping *edge* punctuation only so `C++`, `C#`, `Node.js`, `CI/CD` and `3.11` survive intact while `Python.` normalizes to `python`. The claim filter moved from `len(s) > 10` characters to `>= 2` words. The overlap threshold moved from an absolute `>= 2` to a proportional `0.3` of claim tokens. Extraction now logs `extracted_count` / `dropped_count` / `unscored_count` before truncation, so the `claims[:10]` slice is no longer invisible.
+- Step 1 — shared `_tokenize` helper (`777b5b2`). Applied identically to claim and context, stripping *edge* punctuation only, so `Python.` normalizes to `python` while `C++`, `C#`, `Node.js`, `CI/CD` and `3.11` survive intact. Stop words hoisted to a module constant.
+- Step 2 — claim filter changed from character count to word count (`3328f5f`). `len(s) > 10` selected on how long a word is spelled: it dropped `"Uses Rust"` (9 chars) but kept `"Great at Go"` (11).
+- Step 3 (**added during implementation**) — proportional support threshold (`068ae6e`). PLAN.md Risk 1 deferred this because "no maintainer test demands it". That premise was wrong: `test_multiple_claims_varying_support` expects two of three claims supported, and both supported claims overlap the context on exactly one token, so `>= 2` leaves it red no matter how good the tokenizer is. My 10-case table had mislabelled it. The window of ratios satisfying every test is `(0.17, 0.33]`; I took `0.3` and recorded the window in a comment and a test. PLAN.md Risk 1 has been rewritten to show the reversal rather than quietly edited.
+- Step 4 — extraction logging (`f50f903`). `claims_count` was logged *after* the `claims[:10]` slice, so it saturated at 10 and hid both discarded fragments and the unscored tail.
+- Step 5 — verification against the maintainer's tests, not just my own (below).
 
-**Where I departed from the plan, and why:**
-The plan deferred the threshold change on the grounds that no maintainer test demanded it. Working through the failures, that premise was wrong. `test_multiple_claims_varying_support` expects two of three claims supported, and both supported claims (`"Python expert"`, `"Skilled with Docker"`) overlap the context on exactly one token — under `>= 2` it stays red however good the tokenizer is. My 10-case table had mislabelled it. The real choice was therefore not "adopt my opinion or wait for the maintainer" but "satisfy a maintainer test or ship a red one". Re-measured, the window of ratios satisfying every test is `(0.17, 0.33]`; `0.3` sits inside it with margin at both ends, so I adopted it and dropped the two `xfail` markers that were waiting on this exact decision. The ratio is a named constant with the window recorded in a comment, because a narrow window derived from a small suite is still a small-sample number.
+One test I predicted would go green cannot (`8eaf645`). `test_partial_support_returns_middle_score` asserts `0.2 < score < 0.8` on a single-sentence fixture — `check()` scores exactly one claim there, so the result is 0.0 or 1.0 and can never land inside that interval. Partial credit would not rescue it either: the claim overlaps on 1 of 6 meaningful tokens, so a ratio-valued score is 0.17. That is a test bug independent of #152, so I marked it `xfail` with the arithmetic in the reason rather than rewrite a maintainer's assertion to make my own PR green.
 
-**A test that cannot pass:**
-The plan also predicted `test_partial_support_returns_middle_score` would go green. It cannot. Its fixture is a single sentence, so `check()` scores one claim and returns exactly 0.0 or 1.0 — never a value strictly inside the asserted `(0.2, 0.8)`. Partial credit wouldn't save it either; the claim overlaps on 1 of 6 meaningful tokens, so a ratio-valued score is 0.17. That's a test bug independent of #152, so I marked it `xfail` with the arithmetic in the reason rather than rewriting a maintainer's assertion to make my own PR look green.
+Result: 5 previously failing tests now pass. Still failing is `test_none_context_chunk_text` — a genuine `TypeError` on `{"text": None}`, scoped out in PLAN.md as a separate robustness bug.
 
-**Verification:** `test_faithfulness_checker.py` and `test_faithfulness_short_claims.py` are green apart from `test_none_context_chunk_text`, the `{"text": None}` `TypeError` the plan scoped out. Every edge case in the plan's regression table still holds — empty inputs, missing `text` key, punctuation-only and stop-word-only claims, determinism. `test_relevance_scorer.py::test_query_with_partial_overlap` also fails, but it fails identically at `84dd3b8` and lives in a file I never touched.
+**Next steps:**
+Open the draft PR, request peer review in Slack, address anything I agree with, mark ready for review, then submit the branch URL via the portal.
 
-**Tests added:** `fb8cc3f` adds four classes to `test_faithfulness_short_claims.py`. The Week 8 regression cases proved the bug was fixed but left the fix's own machinery unpinned. `TestTokenizer` covers edge vs. interior punctuation (including that `C++` and `C#` do not collide), unicode quotes and dashes, and the symmetry invariant. `TestProportionalThreshold` covers 1-of-2 supported, 1-of-6 not, and guards `_SUPPORT_RATIO` against drifting outside `(0.17, 0.33]` so a bad value fails with an explanation instead of as a bare assert in a maintainer test. `TestClaimExtraction` and `TestExtractionLogging` cover the word-count filter and the new counters.
+**Blockers:**
+None blocking. Two things I want a reviewer's eye on, both flagged in the PR description: whether `0.3` is the ratio the maintainer actually wants (narrow window, small suite), and whether marking their test `xfail` was mine to do at all.
 
-**Blockers or open questions:**
-Nothing blocking. Two things I want a reviewer's eye on: whether `0.3` is the ratio the maintainer wants (the window is narrow and the suite it was derived from is small), and whether `test_partial_support_returns_middle_score` should be `xfail`ed by me at all or left red for the maintainer to fix.
+---
 
-**Still open:** the three negation cases still score 1.00 (Risk 2) — the PR must not claim to reduce false positives. `claims[:10]`, `{"text": None}` and the threshold confirmation all want follow-up issues.
+### Check-in 2 (end of week)
 
-## Week 9 — Check-in 2 (Sunday, submission)
+**PR link:** <!-- FILL IN: link to the submitted (not draft) PR -->
 
-**PR link:** <!-- FILL IN after opening the PR -->
+**Branch:** `fix/152-faithfulness-checker-can-never-mark-short-claims-as-supported`
 
-**Peer/mentor review:** <!-- FILL IN: who reviewed, and what you changed in response -->
+**What you built:**
+A fix for three independent causes of the same symptom in `rag/evaluator/faithfulness_checker.py`: punctuation-blind tokenization, an absolute overlap threshold that forced short claims to match 100% of themselves, and a character-count claim filter that silently discarded short claims and fell back to the 0.5 neutral default. Claim and context now pass through one shared tokenizer that strips edge punctuation while preserving interior punctuation, support scales with claim length instead of using a fixed token count, and claims are selected by word count. `"Knows Python"` against `"The candidate knows Python."` goes from 0.0 to 1.0; the public `check()` signature, return type and range are unchanged.
 
-**Self-review:**
+**Tests added or updated:**
+`tests/unit/test_faithfulness_short_claims.py` — the Week 8 regression cases proved the bug was fixed but left the fix's own machinery unpinned, so `fb8cc3f` adds four classes: `TestTokenizer` (edge vs. interior punctuation, `C++` not colliding with `C#`, unicode quotes and dashes, the claim/context symmetry invariant), `TestProportionalThreshold` (one of two tokens is enough, one of six is not, and a guard that fails with an explanation if `_SUPPORT_RATIO` drifts outside the measured window), `TestClaimExtraction` (short technology claims survive, single-word fragments do not, the cap holds) and `TestExtractionLogging` (dropped and unscored counts, and that the 0.5 neutral default is distinguishable from a real 0.5 score). Also `tests/unit/test_faithfulness_checker.py` — one `xfail` marker on the unsatisfiable test described in Check-in 1; no maintainer assertion was rewritten.
 
-- [x] Branch name follows `<type>/<issue-number>-<short-description>` — `fix/152-faithfulness-checker-can-never-mark-short-claims-as-supported`
-- [x] Commit messages follow Conventional Commits with a valid scope — all seven are `fix|test|docs(rag):` with a `Refs #152` footer
-- [x] Docstrings are Google-style on everything I added (`_tokenize`, and every new test class)
-- [x] PR template filled in completely
-- [x] New/updated tests cover the changes — `fb8cc3f`
-- [x] `make lint` — introduces no new failures (see baseline below)
-- [x] `make typecheck` — introduces no new failures
-- [x] `make test-unit` — introduces no new failures; 5 previously failing tests now pass
+**Self-review confirmation:** [x] make check passes  [x] make test-unit passes
 
-**Pre-existing failures (measured before I started, at `84dd3b8`):**
+Checked in the sense the assignment defines for a codebase with pre-existing failures — **these changes introduce no new failures**. This repository does not pass either command on an unmodified tree. Measured on the baseline commit `84dd3b8` and again on this branch:
 
-This repo does not pass `make check` or `make test-unit` on an unmodified tree. Measured on the baseline commit and again on my final branch:
-
-| Command | Baseline `84dd3b8` | My branch | Delta |
+| Command | Baseline `84dd3b8` | This branch | Delta |
 |---|---|---|---|
 | `ruff check .` | 182 errors | 181 errors | −1 (fixed an `I001` in the file I touched) |
 | `black --check .` | 52 of 112 files | 52 of 112 files | unchanged |
-| `pytest tests/unit -m unit` | 40 failed, 299 passed, 31 errors | 35 failed, 349 passed, 31 errors | −5 failures, +50 passes |
+| `mypy api/ core/ ingestion/ rag/ agent/ safety/` | identical output | identical output | unchanged; `faithfulness_checker.py` itself is clean |
+| `pytest tests/unit -m unit` | 60 failed, 342 passed, 31 errors | 55 failed, 392 passed, 31 errors | −5 failures, +50 passes |
 
-My changes introduce no new failures in any of the three. The 5 newly passing tests are the #152 bug itself; the +50 passes are the parametrized cases in `fb8cc3f`.
+The −5 failures are the #152 bug itself. The +50 passes are the parametrized cases in `fb8cc3f`. The 31 collection errors are identical on both sides.
 
-Two caveats on how these were measured, so the numbers can be reproduced:
+Two notes on method, so the numbers can be reproduced:
 
-- The 31 errors are collection errors in `test_semantic_chunker.py` and `test_structural_chunker.py`, identical before and after.
-- `test_rate_limiter.py`, `test_review_service.py` and `test_security.py` are excluded from both columns — they need Python 3.11 (`datetime.UTC`) and the environment I measured in runs 3.10. They are excluded from *both* sides, so the comparison is like-for-like, but I have not run them.
+- I did not run `make format`. It executes `black .`, which rewrites in place rather than checking, and would reformat 52 files repo-wide — burying a ~90-line fix in thousands of lines of unrelated reflow. `black --check` is reported instead. Both files I touched were already in the failing set beforehand and still are, so this is not a regression.
+- The suite was measured on Python 3.10 with a `datetime.UTC` shim, since three test modules (`test_rate_limiter`, `test_review_service`, `test_security`) need 3.11 to import. The shim was applied to disposable copies of *both* commits, never to the branch, so the comparison is like-for-like.
 
-**Notes:** I did not run `make format`. It executes `black .`, which rewrites in place rather than checking, and would reformat 52 files across the repo — burying a ~90-line fix in several thousand lines of unrelated reflow. `black --check` is reported above instead. The two files I touched were already in the failing set before my changes and still are, so this is not a regression.
+**Draft PR feedback received from:** <!-- FILL IN: name or Slack handle, or "none" -->
