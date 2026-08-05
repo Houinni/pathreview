@@ -87,3 +87,63 @@ Three notes on method, so the numbers can be reproduced:
 - The one remaining ruff error inside the files I touched is a pre-existing `F841` in the maintainer's `test_common_words_filtered_in_overlap`, which calls `_is_supported` and never asserts on the result. It is present at `84dd3b8` and is the same category of test bug as the `xfail`ed one — left alone deliberately rather than widening this PR.
 
 **Draft PR feedback received from:** none
+
+## Week 10 — Iteration & reflection
+
+### Reviewer feedback
+
+**Feedback received:** [ ] Yes  [x] No — still awaiting review
+
+**Summary of feedback:**
+No review came in. I opened the PR later in the week than I should have, which left almost no window for a classmate to pick it up before the deadline, and no maintainer comment arrived on issue #152 either. The two questions I most wanted answered are still open and are written into the PR description rather than resolved: whether `0.3` is the support ratio the maintainer actually wants, and whether marking one of their tests `xfail` was mine to do.
+
+**How you responded:**
+Nothing to respond to. What I did instead was make the two open decisions as easy as possible to overturn — the ratio is a named constant with the measured window in a comment and a test guarding it, so changing it is one line, and the `xfail` carries the arithmetic in its reason string so a reviewer can check my claim that the test is unsatisfiable without re-deriving it.
+
+---
+
+### Reflection
+
+**What was harder than you expected?**
+
+Deciding what "correct" meant. The fix itself is about fifteen lines, and I had a working version early. What took the rest of the time was that the issue described one cause and there were three, and that one of the three — the `>= 2` overlap threshold — is not a bug with a right answer but a design decision about how much evidence should ground a claim. Three different ratios fit every case I had. Picking one meant reasoning about which direction of error is more expensive in a faithfulness metric, and that is a judgment about the product, not about the code.
+
+The other thing I underestimated was how much of the work is establishing what "working" even means before you can claim you didn't break anything. On an untouched tree this repo has 182 ruff errors, 52 of 112 files failing `black --check`, and 55 failing unit tests. Before I could say "no new failures" I had to check out the baseline commit, run everything, write the numbers down, and then re-run all of it at the end in the same environment. I did that late, and had to redo it twice — once because I measured in the wrong Python version and my numbers did not match what `make` reported on my own machine.
+
+Hardest of all was finding out mid-implementation that my own plan was wrong. I had written a whole section of PLAN.md justifying deferring the threshold change, resting on the claim that no maintainer test demanded it. That claim was false. `test_multiple_claims_varying_support` demands exactly that change, and I had mislabelled it in a ten-case table I built myself. The table looked like measurement. It was an assumption in a table's clothing.
+
+**What did you learn about working in a large codebase?**
+
+That the tests are the specification, and that they do not agree with each other or with the issue text. The issue pointed at the overlap threshold. Three of the four pre-existing failures in the module's test file pointed at something broader. One of them — `test_partial_support_returns_middle_score` — cannot pass at all: its fixture is a single sentence, so the score is either 0.0 or 1.0, and it asserts a value strictly between 0.2 and 0.8. No threshold fixes that. In my own project I would have deleted it. Here the right move was to leave the assertion alone, mark it `xfail` with the arithmetic written out, and say so in the PR.
+
+That is the real difference from building my own thing: I do not get to decide what the code should do. When a test I did not write disagreed with my fix, my first job was to work out whether the test was wrong or I was — and twice out of three times, it was me.
+
+I also learned to read the tooling rather than the documentation about the tooling. `CONTRIBUTING.md` says the project is black-formatted and tells you to run `make check`. Half the files are not black-formatted, and `make check` never actually runs black, because it depends on `lint` first and make halts on the first failing prerequisite. If I had followed the instruction literally and it had worked, it would have reformatted 52 files and buried a 90-line fix in thousands of lines of unrelated reflow. Three of the conventions in that document are aspirational rather than enforced, and you find that out by running things, not by reading.
+
+Finally: scope. I found three more bugs while working on this one — `claims[:10]` silently truncates scoring to the first ten sentences, so appending a hundred fabricated sentences to supported feedback still scores 1.00; `{"text": None}` raises a `TypeError`; and token overlap cannot detect negation, so "has Kubernetes experience" scores 1.00 against "has no Kubernetes experience". None of them are in the PR. Writing them down as follow-ups instead of fixing them was uncomfortable and was clearly right.
+
+**How did AI tools help — and where did they fall short?**
+
+Most useful for orientation and for mechanical work. Getting from "I have never seen this repo" to "I know which three functions matter and who imports them" was fast. It was good at the reproduction harness, at drafting the tokenizer once I knew what the tokenizer had to do, and at genuinely tedious things — rewriting eight commit messages into Conventional Commits form, building the baseline comparison, checking my branch name and docstrings against `CONTRIBUTING.md`.
+
+Where it fell short is more interesting, and it was the same failure every time: it produces confident structure, and the structure has to be checked against the artifact. The ten-case table that anchored my wrong decision was AI-assisted and looked rigorous — labelled cases, a comparison of five threshold rules, a clean verdict. One row was mislabelled, and the entire deferral argument rested on that row. I only caught it because the test stayed red after the tokenizer fix and I sat down and re-derived the token sets by hand. Nothing in the presentation of that table signalled lower confidence for the row that was wrong.
+
+The same pattern showed up twice more. The baseline numbers I was given were measured in a different Python version than my project's and did not match what `make test-unit` printed on my machine — plausible numbers, wrong environment. And I was told to run `make check` per the contributing guide, with no flag that `make format` mutates files in place. Every one of these was caught by running the actual command or reading the actual code, and none of them was caught by reading a summary.
+
+Where it could not help at all was the judgment: whether `0.3` or `0.25` is the right threshold for a metric where a false positive means telling a candidate their feedback is grounded when it is not. It can tell you which ratios fit the data. It cannot tell you which kind of error you would rather ship.
+
+**What would you do differently if you started over?**
+
+Measure the baseline first, on day one, in the real environment. I treated `make check` and `make test-unit` as a final self-review step, when they were actually a prerequisite for being able to say anything about my own changes. Doing it at the end meant redoing it.
+
+Verify every labelled case before building a decision on top of it. The single biggest error in this contribution came from trusting a table I made rather than re-deriving it from the code, and it cost me a whole section of PLAN.md written to justify a deferral that a maintainer test had already decided for me.
+
+Ask on the issue earlier. I wrote several paragraphs of careful reasoning about why I should not unilaterally change the threshold, when a one-sentence comment on #152 would have got a real answer in the time it took me to write the justification.
+
+And push the branch and open a draft PR much sooner. No review came in partly because there was barely a window to give one. That is a process failure, not bad luck.
+
+**What are you most proud of?**
+
+That I did not make the test suite green by changing what it asserted. There were two moments where that was the easy path — the unsatisfiable test I could have quietly rewritten, and the maintainer's `F841` I could have "cleaned up" — and in both cases the right move was to leave someone else's intent intact, document precisely why it cannot pass, and hand the decision back to them.
+
+Close second: when I found out my own plan was wrong, I rewrote PLAN.md to show the reversal — the false premise, the evidence that falsified it, and the corrected measurement — rather than quietly editing the old reasoning out. The record of being wrong is more useful to a reviewer than a clean plan that never was.
