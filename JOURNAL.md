@@ -95,7 +95,7 @@ Three notes on method, so the numbers can be reproduced:
 **Feedback received:** [ ] Yes  [x] No — still awaiting review
 
 **Summary of feedback:**
-No review came in. I opened the PR later in the week than I should have, which left almost no window for a classmate to pick it up before the deadline, and no maintainer comment arrived on issue #152 either. The two questions I most wanted answered are still open and are written into the PR description rather than resolved: whether `0.3` is the support ratio the maintainer actually wants, and whether marking one of their tests `xfail` was mine to do.
+No review came in. The branch went up late in the week, which left almost no window for a classmate to pick it up before the deadline, and no maintainer response arrived on issue #152. The two questions I most wanted answered are therefore still open, and are written into the PR description as explicit requests rather than resolved: whether `0.3` is the support ratio the maintainer actually wants, and whether marking one of their tests `xfail` was mine to do at all.
 
 **How you responded:**
 Nothing to respond to. What I did instead was make the two open decisions as easy as possible to overturn — the ratio is a named constant with the measured window in a comment and a test guarding it, so changing it is one line, and the `xfail` carries the arithmetic in its reason string so a reviewer can check my claim that the test is unsatisfiable without re-deriving it.
