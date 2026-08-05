@@ -12,6 +12,17 @@ logger = structlog.get_logger()
 # ``CI/CD`` and ``3.11`` into unrelated fragments.
 _EDGE_PUNCTUATION = ".,;:!?()[]{}\"'`“”‘’…—–"
 
+# Fraction of a claim's meaningful tokens that must appear in the context for the
+# claim to count as supported. An absolute count cannot work at both ends: `>= 2`
+# forces a two-token claim to match 100% of its tokens, while a long claim gets
+# many chances to hit two matches incidentally.
+#
+# The window that satisfies every test in the suite is (0.17, 0.33]: below 0.18
+# "expert in Rust systems programming" starts matching a Python/JavaScript
+# context on the single token "developer"; above 0.33 "Skilled with Docker" stops
+# being supported by a context that names Docker.
+_SUPPORT_RATIO = 0.3
+
 # Hoisted to module scope so it is not rebuilt on every claim comparison.
 _STOP_WORDS = frozenset({
     'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been',
@@ -114,8 +125,12 @@ class FaithfulnessChecker:
             True if claim is supported
         """
         # Tokenize both sides identically, then require meaningful keyword overlap
-        meaningful_overlap = FaithfulnessChecker._tokenize(claim) & FaithfulnessChecker._tokenize(
-            context
-        )
+        claim_tokens = FaithfulnessChecker._tokenize(claim)
+        if not claim_tokens:
+            # Punctuation-only or all-stop-word claims carry nothing to verify
+            return False
 
-        return len(meaningful_overlap) >= 2
+        meaningful_overlap = claim_tokens & FaithfulnessChecker._tokenize(context)
+
+        # Scale the requirement to claim length rather than using a fixed count
+        return len(meaningful_overlap) / len(claim_tokens) >= _SUPPORT_RATIO

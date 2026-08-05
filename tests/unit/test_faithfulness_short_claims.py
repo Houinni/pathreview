@@ -39,16 +39,6 @@ class TestShortClaimsAreSupported:
 
         assert score == 1.0, "Claim is verbatim in the context; only the trailing period differs."
 
-    @pytest.mark.xfail(
-        strict=False,
-        reason=(
-            "Contested: asserts that one keyword match grounds a two-word claim. "
-            "This is a design decision, not an established requirement - no "
-            "maintainer test demands it, and it loosens a safety metric toward "
-            "false positives. Awaiting maintainer input on issue #152 before "
-            "changing the >=2 threshold."
-        ),
-    )
     def test_short_claim_with_paraphrased_context_is_supported(
         self, checker: FaithfulnessChecker
     ) -> None:
@@ -60,13 +50,6 @@ class TestShortClaimsAreSupported:
 
         assert score == 1.0, "Context clearly grounds the claim, but only one token overlaps."
 
-    @pytest.mark.xfail(
-        strict=False,
-        reason=(
-            "Contested: same threshold design decision as the paraphrase case "
-            "above. Awaiting maintainer input on issue #152."
-        ),
-    )
     def test_single_meaningful_token_claim_can_be_supported(
         self, checker: FaithfulnessChecker
     ) -> None:
