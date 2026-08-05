@@ -58,7 +58,7 @@ None blocking. Two things I want a reviewer's eye on, both flagged in the PR des
 
 ### Check-in 2 (end of week)
 
-**PR link:** _to be filled in on submission — PR not yet opened at time of writing_
+**PR link:** https://github.com/ascherj/pathreview/pull/988
 
 **Branch:** `fix/152-faithfulness-checker-can-never-mark-short-claims-as-supported`
 
