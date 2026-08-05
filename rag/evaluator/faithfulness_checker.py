@@ -73,7 +73,12 @@ class FaithfulnessChecker:
         """
         # Split by sentence (simple regex)
         sentences = re.split(r'[.!?]+', text)
-        claims = [s.strip() for s in sentences if s.strip() and len(s.strip()) > 10]
+        # Filter on word count, not character count. `len(s) > 10` dropped
+        # "Uses Rust" (9 chars) while keeping "Great at Go" (11) - it selected on
+        # spelling length, systematically penalising short technology names, and
+        # a dropped claim is not scored 0 but vanishes, so feedback made entirely
+        # of short claims returned the 0.5 neutral default.
+        claims = [t for s in sentences if len((t := s.strip()).split()) >= 2]
         return claims[:10]  # Limit to 10 claims for scoring
 
     @staticmethod
