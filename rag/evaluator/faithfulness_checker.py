@@ -23,6 +23,10 @@ _EDGE_PUNCTUATION = ".,;:!?()[]{}\"'`“”‘’…—–"
 # being supported by a context that names Docker.
 _SUPPORT_RATIO = 0.3
 
+# Only the first N claims are scored. This is truncation, not sampling, so the
+# count is logged: everything after it is unscored and therefore invisible.
+_MAX_CLAIMS = 10
+
 # Hoisted to module scope so it is not rebuilt on every claim comparison.
 _STOP_WORDS = frozenset({
     'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been',
@@ -90,7 +94,18 @@ class FaithfulnessChecker:
         # a dropped claim is not scored 0 but vanishes, so feedback made entirely
         # of short claims returned the 0.5 neutral default.
         claims = [t for s in sentences if len((t := s.strip()).split()) >= 2]
-        return claims[:10]  # Limit to 10 claims for scoring
+
+        # Log before truncating: `claims_count` in check() is measured after the
+        # slice, so it saturates at _MAX_CLAIMS and hides both the discarded
+        # fragments and the unscored tail.
+        logger.info(
+            "faithfulness_claims_extracted",
+            extracted_count=len(claims),
+            dropped_count=len(sentences) - len(claims),
+            unscored_count=max(0, len(claims) - _MAX_CLAIMS),
+        )
+
+        return claims[:_MAX_CLAIMS]  # Limit claims for scoring
 
     @staticmethod
     def _tokenize(text: str) -> set[str]:
